@@ -1,6 +1,7 @@
 # Chip 8 interpreter in Go
 
 ## IBM logo
+```
 0e0 - clears screen
 a22a - set index register to 0x22A / this should be where the "I" sprite begins
 60c - set register 0 to 0xC (decimal 12). This is the top-left corner of the I in IBM, x-wise.
@@ -21,11 +22,11 @@ d01f
 708
 a275
 d01f
-
+```
 
 
 ## Test
-
+```
 000000000       
                 
 00000000000     
@@ -41,9 +42,9 @@ d01f
 00000000000     
                 
 000000000     
-
+```
 ## opcode test
-
+```
 124E - Jump to memory location 0x124 (292 decimal)
 6801 - Set register 8 to 1
 6905 - Set register 9 to 5
@@ -247,3 +248,4 @@ D9B4
 1248
 A202
 DAB4
+```
