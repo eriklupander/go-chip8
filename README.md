@@ -1,6 +1,15 @@
 # Chip 8 interpreter in Go
 
-## IBM logo
+### IBM logotype
+The Hello World of CHIP-8 emulation.
+![opcodes](images/ibm.png)
+
+### Op codes test
+![opcodes](images/opcodes.png)
+
+## Abbreviated instructions
+Some abbreviated "logs" of instructions emitted by various ROMs. Useful for learning and understanding what/how ROMs try to accomplish.
+### IBM logo
 ```
 0e0 - clears screen
 a22a - set index register to 0x22A / this should be where the "I" sprite begins
@@ -24,26 +33,7 @@ a275
 d01f
 ```
 
-
-## Test
-```
-000000000       
-                
-00000000000     
-                
-  000   000     
-                
-  0000000       
-                
-  0000000       
-                
-  000   000     
-                
-00000000000     
-                
-000000000     
-```
-## opcode test
+### opcodes test
 ```
 124E - Jump to memory location 0x124 (292 decimal)
 6801 - Set register 8 to 1

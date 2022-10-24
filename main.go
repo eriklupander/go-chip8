@@ -187,7 +187,7 @@ func interpretor(game *Game) {
 	go startSoundLoop()
 
 	// 1. load program into memory.
-	romData, err := os.ReadFile("roms/pong.ch8")
+	romData, err := os.ReadFile("roms/test_opcode.ch8")
 	if err != nil {
 		panic("error reading ROM")
 	}
