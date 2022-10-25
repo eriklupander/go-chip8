@@ -58,3 +58,20 @@ func Test_binaryToDecimal1Digit(t *testing.T) {
 		t.Errorf("expected 3, got %d", parts[0])
 	}
 }
+
+func Test_Mask(t *testing.T) {
+	v1 := uint16(4090)
+	v2 := uint16(10)
+	v3 := v1 + v2
+	if v3 != uint16(4100) {
+		t.Errorf("expected v1+v2 to equal 4100")
+	}
+	v4 := v3 % (0x1000)
+	v5 := v3 & 0xFFF
+	if v4 != uint16(4) {
+		t.Errorf("expected v3 mod 0xFF to equal 4, was %d", v4)
+	}
+	if v5 != uint16(4) {
+		t.Errorf("expected v3 mod 0xFF to equal 4, was %d", v5)
+	}
+}

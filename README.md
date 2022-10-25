@@ -239,3 +239,60 @@ D9B4
 A202
 DAB4
 ```
+
+## Pong
+
+Start of running pong...
+```
+6A02 - Store value 2 in register A
+6B0C - Store value 0xC (12) in register B. I.e - left paddle at x:2, y: 12.
+6C3F - Store value 0x3F (63) in register C
+6D0C - Store value 0x0C (12) in register D. This is location of right paddle.
+A2EA - Set I to 0x2EA, should be paddle sprite location in memory.
+DAB6 - Draw at val of reg A for x, reg B for y, 6 lines. (Should be left paddle).
+DCD6 - Draw at val of reg C for x, reg D for y, 6 lines. (Should be right paddle).
+6E00 - Store value 00 in register E
+22D4 - Call subroutine by setting PC=0x2D4, stores PC=0xF in stack frame.
+A2F2 - Set I to 0x2F2
+FE33
+F265
+F129
+6414
+6500
+D455
+7415
+F229
+D455
+00EE
+6603
+6802
+6060
+F015
+F007 - Set register 0 to value of delay timer.
+3000 - Skip next if value in register X is 00
+121A - (probably skipped: jump I to 0x21A)
+F007 - Set register 0 to value of delay timer.
+3000
+121A
+F007
+3000
+121A
+F007
+3000
+121A
+F007
+3000
+121A
+F007
+3000
+121A
+F007
+3000
+121A
+F007
+3000
+121A
+F007
+3000
+
+```
