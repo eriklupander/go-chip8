@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,10 @@ const (
 	memOffset  = 0x200
 	fontOffset = 0x50
 )
+
+func init() {
+	rand.Seed(time.Now().UnixMilli())
+}
 
 var (
 	colorWhite = color.RGBA{
@@ -34,22 +39,25 @@ var (
 
 func main() {
 	ebiten.SetWindowSize(640, 480)
-	ebiten.SetWindowTitle("Hello, World!")
+	ebiten.SetWindowTitle("Hello, CHIP-8!")
 
 	game := &Game{
 		image: image.NewRGBA(image.Rect(0, 0, 64, 32)),
+		lock:  sync.Mutex{},
 	}
 	game.ClearScreen() // always clear screen to init all pixels to black
 
 	emul := emulator{
-		stack:      [32]uint16{},
-		stackFrame: -1,
-		memory:     [4096]byte{},
-		I:          0x0,
-		registers:  [16]byte{},
-		pc:         memOffset,
-		delayTimer: 0x0,
-		soundTimer: 0x0,
+		stack:          [32]uint16{},
+		stackFrame:     -1,
+		memory:         [4096]byte{},
+		I:              0x0,
+		registers:      [16]byte{},
+		pc:             memOffset,
+		delayTimer:     0x0,
+		soundTimer:     0x0,
+		delayTimerLock: sync.Mutex{},
+		soundTimerLock: sync.Mutex{},
 	}
 	go emul.run(game, "roms/pong.ch8")
 
@@ -61,6 +69,7 @@ func main() {
 type Game struct {
 	keys  []ebiten.Key
 	image *image.RGBA
+	lock  sync.Mutex
 }
 
 func keyToByte(key ebiten.Key) byte {
@@ -163,7 +172,9 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
+	g.lock.Lock()
 	screen.WritePixels(g.image.Pix)
+	g.lock.Unlock()
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
@@ -171,36 +182,43 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 }
 
 type emulator struct {
-	stack      [32]uint16 // The stack offers a max depth of 32 with 2 bytes per stack frame
-	stackFrame int
-	memory     [4096]byte // 4kb of internal memory
-	I          uint16     // represents Index register
-	registers  [16]byte   // represents the 16 1-byte registers
-	pc         uint16     // Program counter, set it to the initial memory offset
-	delayTimer byte
-	soundTimer byte
+	stack          [32]uint16 // The stack offers a max depth of 32 with 2 bytes per stack frame
+	stackFrame     int        // current stack frame. Starts at -1 and is set to 0 on first use
+	memory         [4096]byte // 4kb of internal memory
+	I              uint16     // represents Index register
+	registers      [16]byte   // represents the 16 1-byte registers
+	pc             uint16     // Program counter, set it to the initial memory offset
+	delayTimer     byte
+	soundTimer     byte
+	delayTimerLock sync.Mutex // lock for incrementing/setting/accessing the delay timer
+	soundTimerLock sync.Mutex // lock for incrementing/setting/accessing the sound timer
 }
 
 func (e *emulator) startTimerLoop() {
 	var tick = 1000 / 60
 	for {
 		time.Sleep(time.Millisecond * time.Duration(tick))
+		e.delayTimerLock.Lock()
 		if e.delayTimer > 0 {
 			e.delayTimer--
 		}
+		e.delayTimerLock.Unlock()
 	}
 }
 func (e *emulator) startSoundLoop() {
 	var tick = 1000 / 60
 	for {
 		time.Sleep(time.Millisecond * time.Duration(tick))
+		e.soundTimerLock.Lock()
 		if e.soundTimer > 0 {
 			e.soundTimer--
 		}
+		e.soundTimerLock.Unlock()
 	}
 }
 func (e *emulator) run(game *Game, romFile string) {
 
+	// launch timer loops
 	go e.startTimerLoop()
 	go e.startSoundLoop()
 
@@ -234,7 +252,7 @@ func (e *emulator) run(game *Game, romFile string) {
 		instr := (b0 & 0xF0) >> 4        // first nibble, the instruction
 		X := b0 & 0x0F                   // second nibble, register lookup!
 		Y := (b1 & 0xF0) >> 4            // third nibble, register lookup!
-		N := b1 & 0x0F                   // N = fourth nibble, 4 bit number
+		N := b1 & 0x0F                   // fourth nibble, 4 bit number
 		NN := b1                         // NN = second byte
 		NNN := uint16(X)<<8 | uint16(NN) // NNN = second, third and fourth nibbles
 
@@ -305,6 +323,7 @@ func (e *emulator) run(game *Game, romFile string) {
 				}
 				e.registers[X] = e.registers[X] - e.registers[Y]
 			case 0x6: // Shift register X one step to the right
+				// check if rightmost bit is set (and shifted out)
 				if e.registers[X]&(1<<0) > 0 {
 					e.registers[0xF] = 0x1
 				} else {
@@ -319,6 +338,8 @@ func (e *emulator) run(game *Game, romFile string) {
 					e.registers[0xF] = 0x0
 				}
 			case 0xE: // Shift register X one step to the left
+
+				// check if leftmost bit is set (and shifted out)
 				if e.registers[X]&(1<<7) > 0 {
 					e.registers[0xF] = 0x1
 				} else {
@@ -353,7 +374,6 @@ func (e *emulator) run(game *Game, romFile string) {
 					continue
 				}
 
-				//fmt.Printf("%08b\n", spriteByte)
 				for bit := 0; bit < 8; bit++ {
 
 					col := int(xCoord) + bit
@@ -364,26 +384,19 @@ func (e *emulator) run(game *Game, romFile string) {
 
 					// check if bit is set, moving from left-most bit to the right
 					if spriteByte&(1<<(7-bit)) > 0 {
-
+						game.lock.Lock()
 						// if pixel is already "on", we turn off the pixel.
 						if game.image.RGBAAt(col, row) == colorWhite {
 							// turn off pixel
-							//game.screen[col][row] = false
 							game.image.Set(col, row, colorBlack)
-
-							// clear pixel by writing a whitespace
-							//fmt.Printf("\033[%d;%dH", row, col)
-							//fmt.Printf(" ")
 
 							// set register F to 1
 							e.registers[0xF] = 0x1
 						} else {
-							// draw x+bit on line y
-							//fmt.Printf("\033[%d;%dH", row, col)
-							//fmt.Printf("O")
-							//game.screen[col][row] = true
+							// turn on pixel
 							game.image.Set(col, row, colorWhite)
 						}
+						game.lock.Unlock()
 					}
 				}
 				firstByteIndex++
@@ -404,18 +417,24 @@ func (e *emulator) run(game *Game, romFile string) {
 		case 0xF: // timers
 			switch NN {
 			case 0x07: // Set register X to current value of delay timer
-				e.registers[X] = e.delayTimer // should use lock...
+				e.delayTimerLock.Lock()
+				e.registers[X] = e.delayTimer
+				e.delayTimerLock.Unlock()
 			case 0x15: // Set the delay timer to value of register X
+				e.delayTimerLock.Lock()
 				e.delayTimer = e.registers[X]
+				e.delayTimerLock.Unlock()
 			case 0x18: // Set the sound timer to value of register X
+				e.soundTimerLock.Lock()
 				e.soundTimer = e.registers[X]
+				e.soundTimerLock.Unlock()
 			case 0x1E: // Add to index: Add value of register X to I
-				i := int32(e.I) + int32(e.registers[X])
+				i := e.I + uint16(e.registers[X])
 
 				// old-school amiga behaviour
 				if i > 0xFFF {
 					e.registers[0xF] = 0x1
-					i = i % 0x1000
+					i = i % 0x1000 // mod 4096 in case of overflow over original 4kb of RAM
 				}
 				e.I = uint16(i)
 			case 0x0A: // Get key (blocks until input is received) TODO this one is not complete!!
@@ -484,6 +503,11 @@ func keypress(check byte) bool {
 		}
 	}
 	return false
+}
+
+type pixel struct {
+	x, y int
+	on   bool
 }
 
 // Extras: The stuff below this point is just used for learning/debugging purposes.
