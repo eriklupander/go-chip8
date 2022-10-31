@@ -1,12 +1,9 @@
-package main
+package app
 
 import (
 	"fmt"
+	"github.com/eriklupander/go-chip8/internal/app/runtime"
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"image"
-	"image/color"
-	"log"
 	"math/rand"
 	"os"
 	"sync"
@@ -18,36 +15,21 @@ const (
 	fontOffset = 0x50
 )
 
-func init() {
-	rand.Seed(time.Now().UnixMilli())
+type emulator struct {
+	stack          [32]uint16 // The stack offers a max depth of 32 with 2 bytes per stack frame
+	stackFrame     int        // current stack frame. Starts at -1 and is set to 0 on first use
+	memory         [4096]byte // 4kb of internal memory
+	I              uint16     // represents Index register
+	registers      [16]byte   // represents the 16 1-byte registers
+	pc             uint16     // Program counter, set it to the initial memory offset
+	delayTimer     byte       // represents the delay timer that's decremented at 60hz if > 0
+	soundTimer     byte       // represents the sound timer that's decremented at 60hz and plays a beep if > 0.
+	delayTimerLock sync.Mutex // lock for incrementing/setting/accessing the delay timer
+	soundTimerLock sync.Mutex // lock for incrementing/setting/accessing the sound timer
 }
 
-var (
-	colorWhite = color.RGBA{
-		R: 0xFF,
-		G: 0xFF,
-		B: 0xFF,
-		A: 0xFF,
-	}
-	colorBlack = color.RGBA{
-		R: 0x0,
-		G: 0x0,
-		B: 0x0,
-		A: 0xFF,
-	}
-)
-
-func main() {
-	ebiten.SetWindowSize(640, 480)
-	ebiten.SetWindowTitle("Hello, CHIP-8!")
-
-	game := &Game{
-		image: image.NewRGBA(image.Rect(0, 0, 64, 32)),
-		lock:  sync.Mutex{},
-	}
-	game.ClearScreen() // always clear screen to init all pixels to black
-
-	emul := emulator{
+func NewEmulator() *emulator {
+	return &emulator{
 		stack:          [32]uint16{},
 		stackFrame:     -1,
 		memory:         [4096]byte{},
@@ -59,142 +41,9 @@ func main() {
 		delayTimerLock: sync.Mutex{},
 		soundTimerLock: sync.Mutex{},
 	}
-	go emul.run(game, "roms/pong.ch8")
-
-	if err := ebiten.RunGame(game); err != nil {
-		log.Fatal(err)
-	}
 }
 
-type Game struct {
-	keys  []ebiten.Key
-	image *image.RGBA
-	lock  sync.Mutex
-}
-
-func keyToByte(key ebiten.Key) byte {
-	var out byte
-	switch key {
-	case ebiten.KeyDigit0:
-		out = 0x0
-	case ebiten.KeyDigit1:
-		out = 0x1
-	case ebiten.KeyDigit2:
-		out = 0x2
-	case ebiten.KeyDigit3:
-		out = 0x3
-	case ebiten.KeyDigit4:
-		out = 0x4
-	case ebiten.KeyDigit5:
-		out = 0x5
-	case ebiten.KeyDigit6:
-		out = 0x6
-	case ebiten.KeyDigit7:
-		out = 0x7
-	case ebiten.KeyDigit8:
-		out = 0x8
-	case ebiten.KeyDigit9:
-		out = 0x9
-	case ebiten.KeyA:
-		out = 0xA
-	case ebiten.KeyB:
-		out = 0xB
-	case ebiten.KeyC:
-		out = 0xC
-	case ebiten.KeyD:
-		out = 0xD
-	case ebiten.KeyE:
-		out = 0xE
-	case ebiten.KeyF:
-		out = 0xF
-	}
-	return out
-}
-
-func byteToKey(b byte) ebiten.Key {
-	var out ebiten.Key
-	switch b {
-	case 0x0:
-		return ebiten.KeyDigit0
-	case 0x1:
-		return ebiten.KeyDigit1
-	case 0x2:
-		return ebiten.KeyDigit2
-	case 0x3:
-		return ebiten.KeyDigit3
-	case 0x4:
-		return ebiten.KeyDigit4
-	case 0x5:
-		return ebiten.KeyDigit5
-	case 0x6:
-		return ebiten.KeyDigit6
-	case 0x7:
-		return ebiten.KeyDigit7
-	case 0x8:
-		return ebiten.KeyDigit8
-	case 0x9:
-		return ebiten.KeyDigit9
-	case 0xA:
-		return ebiten.KeyA
-	case 0xB:
-		return ebiten.KeyB
-	case 0xC:
-		return ebiten.KeyC
-	case 0xD:
-		return ebiten.KeyD
-	case 0xE:
-		return ebiten.KeyE
-	case 0xF:
-		return ebiten.KeyF
-	}
-	return out
-}
-func (g *Game) WaitForKeypress(keypresses chan byte) {
-
-	for _, key := range g.keys {
-		out := keyToByte(key)
-		keypresses <- out
-	}
-}
-
-func (g *Game) ClearScreen() {
-	for x := 0; x < 64; x++ {
-		for y := 0; y < 32; y++ {
-			g.image.Set(x, y, color.Black)
-		}
-	}
-}
-
-func (g *Game) Update() error {
-
-	g.keys = inpututil.AppendPressedKeys(g.keys[:0])
-	return nil
-}
-
-func (g *Game) Draw(screen *ebiten.Image) {
-	g.lock.Lock()
-	screen.WritePixels(g.image.Pix)
-	g.lock.Unlock()
-}
-
-func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
-	return 64, 32
-}
-
-type emulator struct {
-	stack          [32]uint16 // The stack offers a max depth of 32 with 2 bytes per stack frame
-	stackFrame     int        // current stack frame. Starts at -1 and is set to 0 on first use
-	memory         [4096]byte // 4kb of internal memory
-	I              uint16     // represents Index register
-	registers      [16]byte   // represents the 16 1-byte registers
-	pc             uint16     // Program counter, set it to the initial memory offset
-	delayTimer     byte
-	soundTimer     byte
-	delayTimerLock sync.Mutex // lock for incrementing/setting/accessing the delay timer
-	soundTimerLock sync.Mutex // lock for incrementing/setting/accessing the sound timer
-}
-
-func (e *emulator) startTimerLoop() {
+func (e *emulator) startDelayTimer() {
 	var tick = 1000 / 60
 	for {
 		time.Sleep(time.Millisecond * time.Duration(tick))
@@ -205,7 +54,7 @@ func (e *emulator) startTimerLoop() {
 		e.delayTimerLock.Unlock()
 	}
 }
-func (e *emulator) startSoundLoop() {
+func (e *emulator) startSoundTimer() {
 	var tick = 1000 / 60
 	for {
 		time.Sleep(time.Millisecond * time.Duration(tick))
@@ -216,11 +65,11 @@ func (e *emulator) startSoundLoop() {
 		e.soundTimerLock.Unlock()
 	}
 }
-func (e *emulator) run(game *Game, romFile string) {
+func (e *emulator) Run(game *runtime.Runtime, romFile string) {
 
 	// launch timer loops
-	go e.startTimerLoop()
-	go e.startSoundLoop()
+	go e.startDelayTimer()
+	go e.startSoundTimer()
 
 	// 1. load program into memory.
 	romData, err := os.ReadFile(romFile)
@@ -245,6 +94,7 @@ func (e *emulator) run(game *Game, romFile string) {
 		b1 := e.memory[e.pc+1]
 		e.pc += 2
 
+		//instruction := fmt.Sprintf("%02x%02x", b0, b1)
 		// use for outputting instructions to stdout.
 		//fmt.Printf("%02X%02X\n", b0, b1)
 
@@ -288,13 +138,15 @@ func (e *emulator) run(game *Game, romFile string) {
 				e.pc += 2
 			}
 		case 0x5: // Skip if values in registers X and Y are equal
-			if e.registers[X] == e.registers[Y] {
+			if N == 0x0 && e.registers[X] == e.registers[Y] {
 				e.pc += 2
 			}
 		case 0x6: // Set register X to NN
 			e.registers[X] = NN
 		case 0x7: // Add NN to register X
+			//fmt.Printf("%s: ADD: val before add in register %d: %d: Add by: %d ", instruction, X, e.registers[X], NN)
 			e.registers[X] = e.registers[X] + NN
+			//fmt.Printf(": resulting in new value %d\n", e.registers[X])
 		case 0x8:
 			switch N {
 			case 0x0: // Set register X to value of register Y
@@ -307,6 +159,7 @@ func (e *emulator) run(game *Game, romFile string) {
 			case 0x3: // Set register X to XOR of registers X and Y
 				e.registers[X] = e.registers[X] ^ e.registers[Y]
 			case 0x4: // Set register X to X + Y, set register F (15) to 1 or 0 depending on overflow
+				//fmt.Printf("%s: Set X to X+Y: registers: X: %d, Y: %d. Result %d+%d = %d\n", instruction, X, Y, e.registers[X], e.registers[Y], (e.registers[X] + e.registers[Y]))
 				vx := e.registers[X]
 				result := vx + e.registers[Y]
 				e.registers[X] = result
@@ -316,6 +169,8 @@ func (e *emulator) run(game *Game, romFile string) {
 					e.registers[0xF] = 0x0
 				}
 			case 0x5: // Subtract: set register X to the result of registers X - Y.
+				//fmt.Printf("%s: Subtract register X-Y reg-%d - reg-%d with values %d - %d\n", instruction, X, Y, e.registers[X], e.registers[Y])
+
 				if e.registers[X] > e.registers[Y] {
 					e.registers[0xF] = 0x1
 				} else {
@@ -324,13 +179,17 @@ func (e *emulator) run(game *Game, romFile string) {
 				e.registers[X] = e.registers[X] - e.registers[Y]
 			case 0x6: // Shift register X one step to the right
 				// check if rightmost bit is set (and shifted out)
+				//fmt.Printf("%s: Shift right. Was: %08b", instruction, e.registers[Y])
+				e.registers[X] = e.registers[Y]
 				if e.registers[X]&(1<<0) > 0 {
+					//fmt.Printf(" 0xF bit was set!\n")
 					e.registers[0xF] = 0x1
 				} else {
 					e.registers[0xF] = 0x0
 				}
 				e.registers[X] = e.registers[X] >> 1
 			case 0x7: // Subtract: set register X to the result of registers Y - X.
+				//fmt.Printf("%s: Subtract register Y-X reg-%d - reg-%d with values %d - %d\n", instruction, Y, X, e.registers[Y], e.registers[X])
 				e.registers[X] = e.registers[Y] - e.registers[X]
 				if e.registers[Y] > e.registers[X] {
 					e.registers[0xF] = 0x1
@@ -338,9 +197,11 @@ func (e *emulator) run(game *Game, romFile string) {
 					e.registers[0xF] = 0x0
 				}
 			case 0xE: // Shift register X one step to the left
-
+				e.registers[X] = e.registers[Y]
 				// check if leftmost bit is set (and shifted out)
+				//fmt.Printf("%s: Shift left. Was: %08b", instruction, e.registers[Y])
 				if e.registers[X]&(1<<7) > 0 {
+					//fmt.Printf(" 0xF bit was set!\n")
 					e.registers[0xF] = 0x1
 				} else {
 					e.registers[0xF] = 0x0
@@ -351,7 +212,7 @@ func (e *emulator) run(game *Game, romFile string) {
 			}
 
 		case 0x9: // Skip if values in registers X and Y are not equal
-			if e.registers[X] != e.registers[Y] {
+			if N == 0x0 && e.registers[X] != e.registers[Y] {
 				e.pc += 2
 			}
 		case 0xA: // Set Index register to NNN
@@ -364,6 +225,7 @@ func (e *emulator) run(game *Game, romFile string) {
 		case 0xD: // draw sprite at I at screen x, y given by values in registers X and Y.
 			xCoord := e.registers[X] % 64
 			yCoord := e.registers[Y] % 32
+			//fmt.Printf("%s: draw at x:%d y:%d\n", instruction, xCoord, yCoord)
 			e.registers[0xF] = 0x0
 			firstByteIndex := e.I
 			numLines := int(N)
@@ -384,19 +246,13 @@ func (e *emulator) run(game *Game, romFile string) {
 
 					// check if bit is set, moving from left-most bit to the right
 					if spriteByte&(1<<(7-bit)) > 0 {
-						game.lock.Lock()
-						// if pixel is already "on", we turn off the pixel.
-						if game.image.RGBAAt(col, row) == colorWhite {
-							// turn off pixel
-							game.image.Set(col, row, colorBlack)
-
+						if game.IsPixelSet(col, row) {
+							game.Set(col, row, false)
 							// set register F to 1
 							e.registers[0xF] = 0x1
 						} else {
-							// turn on pixel
-							game.image.Set(col, row, colorWhite)
+							game.Set(col, row, true)
 						}
-						game.lock.Unlock()
 					}
 				}
 				firstByteIndex++
@@ -404,11 +260,11 @@ func (e *emulator) run(game *Game, romFile string) {
 		case 0xE: // handle key presses EX9E and EXA1
 			switch NN {
 			case 0x9E: // pressed
-				if ebiten.IsKeyPressed(byteToKey(e.registers[X])) {
+				if ebiten.IsKeyPressed(runtime.ByteToKey(e.registers[X])) {
 					e.pc += 2
 				}
 			case 0xA1: // not pressed
-				if !ebiten.IsKeyPressed(byteToKey(e.registers[X])) {
+				if !ebiten.IsKeyPressed(runtime.ByteToKey(e.registers[X])) {
 					e.pc += 2
 				}
 			default:
@@ -429,14 +285,17 @@ func (e *emulator) run(game *Game, romFile string) {
 				e.soundTimer = e.registers[X]
 				e.soundTimerLock.Unlock()
 			case 0x1E: // Add to index: Add value of register X to I
+				//fmt.Printf("%s: add register %d val %d to I\n", instruction, X, e.registers[X])
 				i := e.I + uint16(e.registers[X])
 
 				// old-school amiga behaviour
 				if i > 0xFFF {
 					e.registers[0xF] = 0x1
 					i = i % 0x1000 // mod 4096 in case of overflow over original 4kb of RAM
+				} else {
+					e.registers[0xF] = 0x0
 				}
-				e.I = uint16(i)
+				e.I = i
 			case 0x0A: // Get key (blocks until input is received) TODO this one is not complete!!
 				// input chan should be cleared beforehand?
 
@@ -447,23 +306,26 @@ func (e *emulator) run(game *Game, romFile string) {
 				e.registers[X] = key
 				//pc = pc - 2 // decrease PC by 2... if the "wait for input" is cancelled by a timer...?
 			case 0x29: // font character
+				//fmt.Printf("%s: Set FONT char from register %d having value %d\n", instruction, X, e.registers[X])
 				b := e.registers[X] & 0x0F // just use last nibble of value in register X
 				e.I = uint16(fontOffsets[b])
-			case 0x33: // binary-coded decimal conversion
-				conv := binaryDecimalConversion(e.registers[X])
-				for i := uint16(0); i < uint16(len(conv)); i++ {
-					e.memory[e.I+i] = conv[i]
-				}
+			case 0x33: // binary-coded decimal conversion. Note that "10" is split into 0,1,0 and 4 into 0,0,4.
+				e.memory[e.I+0] = (e.registers[X] / 100) % 10
+				e.memory[e.I+1] = (e.registers[X] / 10) % 10
+				e.memory[e.I+2] = (e.registers[X] / 1) % 10
 			case 0x55: // Store register to memory
 				for i := 0; i <= int(X); i++ {
 					index := e.I + uint16(i)
 					e.memory[index] = e.registers[i]
 				}
+				e.I = e.I + uint16(X+1)
 			case 0x65: // Load value from memory into register
-				for i := 0; i <= int(X); i++ {
-					index := e.I + uint16(i)
-					e.registers[i] = e.memory[index]
+				//fmt.Printf("%s: Load value from memory into register 0-%d\n", instruction, X)
+				for i := uint8(0); i <= X; i++ {
+					e.registers[i] = e.memory[e.I]
+					e.I = e.I + 1
 				}
+				//fmt.Println()
 			default:
 				panic("Unknown instruction: " + fmt.Sprintf("%02x", instr))
 			}
@@ -475,92 +337,11 @@ func (e *emulator) run(game *Game, romFile string) {
 	}
 }
 
-func binaryDecimalConversion(dec byte) []byte {
-
-	out := make([]byte, 0)
-
-	p3 := dec / 100
-	p2 := dec % 100 / 10
-	p1 := dec % 10
-	if p3 != 0 {
-		out = append(out, p3)
+func (e *emulator) logger(instruction string, X, Y, N, NN byte, NNN uint16) {
+	switch instruction {
+	case "2NNN":
+		fmt.Printf("%s: Push to stack. Old PC: %d, new stack frame: %d, NNN: %d\n", instruction, e.pc, e.stackFrame, NNN)
+	case "6XNN":
+		fmt.Printf("%s: SET: register %d to %d\n", instruction, X, NN)
 	}
-	if p2 != 0 || p3 != 0 {
-		out = append(out, p2)
-	}
-	out = append(out, p1)
-	return out
 }
-
-// temp hack
-var keys = make([]ebiten.Key, 0)
-
-func keypress(check byte) bool {
-	keys = inpututil.AppendPressedKeys(keys[:0])
-	for i := range keys {
-		if keyToByte(keys[i]) == check {
-			return true
-		}
-	}
-	return false
-}
-
-type pixel struct {
-	x, y int
-	on   bool
-}
-
-// Extras: The stuff below this point is just used for learning/debugging purposes.
-var fontOffsets = map[byte]int{
-	0x0: fontOffset,
-	0x1: fontOffset + 5,
-	0x2: fontOffset + 10,
-	0x3: fontOffset + 15,
-	0x4: fontOffset + 20,
-	0x5: fontOffset + 25,
-	0x6: fontOffset + 30,
-	0x7: fontOffset + 35,
-	0x8: fontOffset + 40,
-	0x9: fontOffset + 45,
-	0xA: fontOffset + 50,
-	0xB: fontOffset + 55,
-	0xC: fontOffset + 60,
-	0xD: fontOffset + 65,
-	0xE: fontOffset + 70,
-	0xF: fontOffset + 75,
-}
-var offsets = map[rune]int{
-	'0': 0,
-	'1': 5,
-	'2': 10,
-	'3': 15,
-	'4': 20,
-	'5': 25,
-	'6': 30,
-	'7': 35,
-	'8': 40,
-	'9': 45,
-	'A': 50,
-	'B': 55,
-	'C': 60,
-	'D': 65,
-	'E': 70,
-	'F': 75,
-}
-var font = []byte{
-	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-	0x20, 0x60, 0x20, 0x20, 0x70, // 1
-	0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-	0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-	0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-	0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-	0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-	0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-	0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-	0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-	0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-	0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-	0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-	0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-	0xF0, 0x80, 0xF0, 0x80, 0x80} // F
