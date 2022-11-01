@@ -43,13 +43,12 @@ func NewUIRuntime() *Runtime {
 		panic("init audio: " + err.Error())
 	}
 	game := &Runtime{
-		image:        image.NewRGBA(image.Rect(0, 0, 64, 32)),
-		ghostImage:   initializedImage,
-		tmpImage:     ebiten.NewImage(64, 32),
-		lock:         sync.Mutex{},
-		alphaColorM:  alphaColorM,
-		audioContext: audioContext,
-		player:       audioPlayer,
+		image:       image.NewRGBA(image.Rect(0, 0, 64, 32)),
+		ghostImage:  initializedImage,
+		tmpImage:    ebiten.NewImage(64, 32),
+		lock:        sync.Mutex{},
+		alphaColorM: alphaColorM,
+		player:      audioPlayer,
 	}
 	game.ClearScreen() // always clear screen to init all pixels to black
 	return game
@@ -67,9 +66,7 @@ type Runtime struct {
 	alphaColorM ebiten.ColorM
 	lock        sync.Mutex
 
-	audioContext *audio.Context
-	player       *audio.Player
-	playingAudio bool
+	player *audio.Player
 }
 
 func (g *Runtime) PlayAudio() {

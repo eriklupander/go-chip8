@@ -68,11 +68,11 @@ func (e *emulator) startSoundTimer(r *runtime.Runtime) {
 		e.soundTimerLock.Unlock()
 	}
 }
-func (e *emulator) Run(game *runtime.Runtime, romFile string) {
+func (e *emulator) Run(r *runtime.Runtime, romFile string) {
 
 	// launch timer loops
 	go e.startDelayTimer()
-	go e.startSoundTimer(game)
+	go e.startSoundTimer(r)
 
 	// 1. load program into memory.
 	romData, err := os.ReadFile(romFile)
@@ -116,7 +116,7 @@ func (e *emulator) Run(game *runtime.Runtime, romFile string) {
 			case 0xE:
 				switch N {
 				case 0x0: // clear screen
-					game.ClearScreen()
+					r.ClearScreen()
 				case 0xE: // pop stack
 					e.pc = e.stack[e.stackFrame] // remember - this is actually the "parent" stack frame
 					e.stackFrame--
@@ -249,12 +249,12 @@ func (e *emulator) Run(game *runtime.Runtime, romFile string) {
 
 					// check if bit is set, moving from left-most bit to the right
 					if spriteByte&(1<<(7-bit)) > 0 {
-						if game.IsPixelSet(col, row) {
-							game.Set(col, row, false)
+						if r.IsPixelSet(col, row) {
+							r.Set(col, row, false)
 							// set register F to 1
 							e.registers[0xF] = 0x1
 						} else {
-							game.Set(col, row, true)
+							r.Set(col, row, true)
 						}
 					}
 				}
@@ -303,7 +303,7 @@ func (e *emulator) Run(game *runtime.Runtime, romFile string) {
 				// input chan should be cleared beforehand?
 
 				keypresses := make(chan byte)
-				go game.WaitForKeypress(keypresses)
+				go r.WaitForKeypress(keypresses)
 				key := <-keypresses
 
 				e.registers[X] = key
