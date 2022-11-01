@@ -1,10 +1,14 @@
 package runtime
 
 import (
+	"bytes"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/audio"
+	"github.com/hajimehoshi/ebiten/v2/audio/vorbis"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"image"
 	"image/color"
+	"os"
 	"sync"
 )
 
@@ -24,12 +28,28 @@ func NewUIRuntime() *Runtime {
 	alphaColorM := ebiten.ColorM{}
 	alphaColorM.Translate(1.0, 1.0, 1.0, -0.25)
 
+	audioContext := audio.NewContext(44_000)
+
+	data, err := os.ReadFile("pling.ogg")
+	if err != nil {
+		panic("cant find ogg file")
+	}
+	sampleData, err := vorbis.DecodeWithoutResampling(bytes.NewReader(data))
+	if err != nil {
+		panic("vorbis: " + err.Error())
+	}
+	audioPlayer, err := audioContext.NewPlayer(sampleData)
+	if err != nil {
+		panic("init audio: " + err.Error())
+	}
 	game := &Runtime{
-		image:       image.NewRGBA(image.Rect(0, 0, 64, 32)),
-		ghostImage:  initializedImage,
-		tmpImage:    ebiten.NewImage(64, 32),
-		lock:        sync.Mutex{},
-		alphaColorM: alphaColorM,
+		image:        image.NewRGBA(image.Rect(0, 0, 64, 32)),
+		ghostImage:   initializedImage,
+		tmpImage:     ebiten.NewImage(64, 32),
+		lock:         sync.Mutex{},
+		alphaColorM:  alphaColorM,
+		audioContext: audioContext,
+		player:       audioPlayer,
 	}
 	game.ClearScreen() // always clear screen to init all pixels to black
 	return game
@@ -46,6 +66,22 @@ type Runtime struct {
 	tmpImage    *ebiten.Image
 	alphaColorM ebiten.ColorM
 	lock        sync.Mutex
+
+	audioContext *audio.Context
+	player       *audio.Player
+	playingAudio bool
+}
+
+func (g *Runtime) PlayAudio() {
+	if !g.player.IsPlaying() {
+		g.player.Play()
+	}
+}
+func (g *Runtime) StopAudio() {
+	if g.player.IsPlaying() {
+		g.player.Pause()
+		g.player.Rewind()
+	}
 }
 
 func (g *Runtime) WaitForKeypress(keypresses chan byte) {

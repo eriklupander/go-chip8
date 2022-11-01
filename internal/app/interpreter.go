@@ -54,13 +54,16 @@ func (e *emulator) startDelayTimer() {
 		e.delayTimerLock.Unlock()
 	}
 }
-func (e *emulator) startSoundTimer() {
+func (e *emulator) startSoundTimer(r *runtime.Runtime) {
 	var tick = 1000 / 60
 	for {
 		time.Sleep(time.Millisecond * time.Duration(tick))
 		e.soundTimerLock.Lock()
 		if e.soundTimer > 0 {
 			e.soundTimer--
+			r.PlayAudio()
+		} else {
+			r.StopAudio()
 		}
 		e.soundTimerLock.Unlock()
 	}
@@ -69,7 +72,7 @@ func (e *emulator) Run(game *runtime.Runtime, romFile string) {
 
 	// launch timer loops
 	go e.startDelayTimer()
-	go e.startSoundTimer()
+	go e.startSoundTimer(game)
 
 	// 1. load program into memory.
 	romData, err := os.ReadFile(romFile)
